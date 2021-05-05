@@ -1,0 +1,190 @@
+Skip to content
+Search or jump to…
+
+Pull requests
+Issues
+Marketplace
+Explore
+ 
+@lzylee1 
+EJC-Computing-Club
+/
+gesture_control
+Private
+1
+00
+Code
+Issues
+Pull requests
+Actions
+Projects
+Wiki
+Security
+Insights
+gesture_control/hand_detection_rock_paper_scissors
+@NgZingHng
+NgZingHng Create hand_detection_rock_paper_scissors
+Latest commit f7a3b5f 39 minutes ago
+ History
+ 1 contributor
+146 lines (129 sloc)  4.55 KB
+  
+import numpy as np
+import cv2 as cv
+import keyboard
+import random
+
+
+def skin_mask(image):
+    hsvim = cv.cvtColor(image, cv.COLOR_BGR2HSV)
+    lower = np.array([0, 48, 80], dtype="uint8")
+    upper = np.array([20, 255, 255], dtype="uint8")
+    skinregionhsv = cv.inRange(hsvim, lower, upper)
+    blurred = cv.blur(skinregionhsv, (2, 2))
+    ret, thresh = cv.threshold(blurred, 0, 255, cv.THRESH_BINARY)
+    return thresh
+
+
+def getcnthull(mask_image):
+    contours, hierarchy = cv.findContours(mask_image, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+    contours = max(contours, key=lambda x: cv.contourArea(x))
+    hull = cv.convexHull(contours)
+    return contours, hull
+
+
+def finger_counter(de):
+    global cnt
+    global trace_color
+    s, e, f, d = de
+    start = tuple(contours[s][0])
+    end = tuple(contours[e][0])
+    far = tuple(contours[f][0])
+    a = np.sqrt((end[0] - start[0]) ** 2 + (end[1] - start[1]) ** 2)
+    b = np.sqrt((far[0] - start[0]) ** 2 + (far[1] - start[1]) ** 2)
+    c = np.sqrt((end[0] - far[0]) ** 2 + (end[1] - far[1]) ** 2)
+    angle = np.arccos((b ** 2 + c ** 2 - a ** 2) / (2 * b * c))
+    if np.pi / 16 <= angle <= np.pi / 3:  # angle less than 90 degree, treat as fingers
+        cv.circle(img, far, 4, trace_color, -1)
+        cnt += 1
+
+
+def getdefects(contours):
+    hull = cv.convexHull(contours, returnPoints=False)
+    defects = cv.convexityDefects(contours, hull)
+    return defects
+
+
+def stabilise_convert(number):
+    number = int(number)
+    global last_input
+    if number == 0:
+        last_input = "rock"
+    elif number == 5 or number == 4:
+        last_input = "paper"
+    elif number == 2:
+        last_input = "scissors"
+    return last_input
+
+
+def computer_move():
+    global move_tracker
+    moves = ["rock", "paper", "scissors"]
+    try:
+        most_common = max(set(move_tracker), key=move_tracker.count)
+        most_recent = max(set(move_tracker[-4:-1]), key=move_tracker[-4:-1].count)
+        moves.extend([most_recent, most_common])
+    finally:
+        return moves[random.randint(0, len(moves)-1)]
+
+
+def elegant_rock_paper_scissors(base, usr):
+    global move_tracker
+    move_tracker.append(usr)
+    results = len(usr)-len(base)
+    if results > 0 and results != 4:
+        return "Win"
+    elif results < 0 or results == 4:
+        return "Lose"
+    elif results == 0:
+        return "Tie"
+
+
+running = game_start = True
+text_color = (255, 255, 0)
+trace_color = (0, 255, 255)
+cnt = user_input = last_input = game_state = confirm = None
+game_timer = timer = 0
+move_tracker = []
+
+cap = cv.VideoCapture(0, cv.CAP_DSHOW)
+if not cap.isOpened():
+    print("Cannot open camera")
+while cap.isOpened() and running:
+    try:
+        if keyboard.is_pressed('alt+f4'):
+            running = False
+    except:
+        print("Keyboard Logger Function Failed")
+    _, img = cap.read()
+    try:
+        mask_img = skin_mask(img)
+        contours, hull = getcnthull(mask_img)
+        cv.drawContours(img, [contours], -1, text_color, 2)
+        cv.drawContours(img, [hull], -1, trace_color, 2)
+        defects = getdefects(contours)
+        if defects is not None and timer >= 5:
+            timer = 0
+            cnt = 0
+            for i in range(defects.shape[0]):
+                finger_counter(defects[i][0])
+            if cnt > 0:
+                cnt += 1
+            user_input = stabilise_convert(cnt)
+        timer += 1
+        cv.putText(img, user_input, (5, 120),
+                   cv.FONT_HERSHEY_SIMPLEX, 5, text_color, 2, cv.LINE_AA)
+        if game_state is not None:
+            cv.putText(img, game_state, (450, 200),
+                       cv.FONT_HERSHEY_SIMPLEX, 2, text_color, 2, cv.LINE_AA)
+            if game_timer > 90 or game_timer == 0:
+                cv.putText(img, "Restart?", (70, 300),
+                           cv.FONT_HERSHEY_SIMPLEX, 3, text_color, 2, cv.LINE_AA)
+        if game_start:
+            if game_timer < 75:
+                game_state = str((3 - (game_timer//25)))
+            elif game_timer == 75:
+                game_state = elegant_rock_paper_scissors(computer_move(), user_input)
+            elif game_timer == 100:
+                game_timer = -1
+                game_start = False
+            game_timer += 1
+        else:
+            if cnt == 3:
+                if confirm == 5:
+                    game_start = True
+                confirm += 1
+            elif cnt >= 8:
+                running = False
+            else:
+                confirm = 0
+        cv.imshow("Rock, Paper, Scissors", img)
+    except:
+        print("Image Processor fail")
+        pass
+    if cv.waitKey(1) & 0xFF == ord("q"):
+        break
+cap.release()
+cv.destroyAllWindows()
+© 2021 GitHub, Inc.
+Terms
+Privacy
+Security
+Status
+Docs
+Contact GitHub
+Pricing
+API
+Training
+Blog
+About
+Loading complete
